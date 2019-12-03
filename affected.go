@@ -10,64 +10,26 @@ import (
 
 // Cause is why a package has been marked as affected
 type Cause struct {
-	Package *module.Package   // The package that has modififcations
-	Imports []*module.Package // The import graph to that package
+	Package    *module.Package   // The package that has modififcations
+	ImportPath module.ImportPath // The import graph to that package
 }
 
 // Package represents a modified package
 type Package struct {
 	*module.Package
 
-	cause []*module.Package
+	Causes []Cause
 }
 
-// Cause returns why a package is modified based on it's imports
-func (p *Package) Cause() []Cause {
-	cause := make([]Cause, 0)
-
-	for _, c := range p.cause {
-		imports := make([]*module.Package, 0)
-
-		walk := func(cause *module.Package) func(i *module.Package) error {
-			return func(i *module.Package) error {
-				imports = append(imports, i)
-
-				if i.ID == cause.ID {
-					return module.ErrSkipPackage
-				}
-
-				return nil
-			}
-		}
-
-		if err := module.Walk(p.Package, module.WalkImports, walk(c)); err != nil {
-			return nil
-		}
-
-		cause = append(cause, Cause{
-			Package: c,
-			Imports: imports,
-		})
-	}
-
-	return cause
-}
-
-// MarshalJSON marshals an Package effected package to JSON which will contain cause and imports
+// MarshalJSON marshals a package with its causes into a json structure
 func (p *Package) MarshalJSON() ([]byte, error) {
-	causes := make([]map[string]interface{}, 0, len(p.cause))
+	causes := make([]map[string]interface{}, len(p.Causes))
 
-	for _, pkg := range p.Cause() {
-		imports := make([]string, len(pkg.Imports))
-		for i, imp := range pkg.Imports {
-			imports[i] = imp.ID
+	for i, cause := range p.Causes {
+		causes[i] = map[string]interface{}{
+			"package": cause.Package,
+			"imports": cause.ImportPath,
 		}
-
-		causes = append(causes, map[string]interface{}{
-			"package":   pkg.Package.ID,
-			"directory": pkg.Package.Dir,
-			"imports":   imports,
-		})
 	}
 
 	return json.Marshal(map[string]interface{}{
@@ -82,8 +44,17 @@ type PackagesOptions struct {
 	PL  module.PackageLoader            // Package loader
 }
 
+// SubjectFunc sets what packages should be trated as the subjects that will be affected by
+// modifications in other packages
+type SubjectFunc func(p *module.Package) bool
+
+// NoParents will result in all top level packages being analysed for modifications
+func NoParents(p *module.Package) bool {
+	return len(p.Parents) == 0
+}
+
 // Packages returns packages affected by two different commits either directly or indirectly
-func Packages(mod, a, b string) ([]*Package, error) {
+func Packages(mod, a, b string, fn SubjectFunc) ([]*Package, error) {
 	g, err := git.New()
 	if err != nil {
 		return nil, err
@@ -100,8 +71,8 @@ func Packages(mod, a, b string) ([]*Package, error) {
 		return nil, err
 	}
 
-	// Load packages in this module
-	pkgs, err := opts.PL.Load(mod)
+	// Load package graph
+	graph, err := opts.PL.Load(mod)
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +80,9 @@ func Packages(mod, a, b string) ([]*Package, error) {
 	m := make(map[string]*Package)
 
 	for _, dir := range dirs {
-		if modified := pkgs.Find(module.FindPackageByDir(dir)); modified != nil {
+		if modified := graph.Find(module.FindPackageByDir(dir)); modified != nil {
 			err := module.Walk(modified, module.WalkParents, func(p *module.Package) error {
-				if len(p.Parents) == 0 { // If this package is not imported by any other packages it is by definition a root node
+				if fn(p) {
 					affected, ok := m[p.ID]
 					if !ok {
 						affected = &Package{
@@ -121,7 +92,10 @@ func Packages(mod, a, b string) ([]*Package, error) {
 						m[p.ID] = affected
 					}
 
-					affected.cause = append(affected.cause, modified)
+					affected.Causes = append(affected.Causes, Cause{
+						Package:    modified,
+						ImportPath: graph.ImportPath(affected.Package, modified),
+					})
 
 					return module.ErrSkipPackage
 				}

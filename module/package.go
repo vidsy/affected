@@ -2,7 +2,6 @@ package module
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 
 	"golang.org/x/tools/go/packages"
@@ -10,20 +9,17 @@ import (
 
 // DefaultPackageLoader is the default package loader
 func DefaultPackageLoader() PackageLoader {
-	return PackageLoaderFunc(func(module string) (Packages, error) {
+	return PackageLoaderFunc(func(module string) (Graph, error) {
 		cfg := &packages.Config{
 			Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedTypes,
 		}
 
-		lpkgs, err := packages.Load(cfg, module+"/...")
+		pkgs, err := packages.Load(cfg, module+"/...")
 		if err != nil {
 			return nil, err
 		}
 
-		pkgs := Packages{}
-		pkgs = pkgs.AddNew(module, lpkgs...)
-
-		return pkgs, nil
+		return NewGraph(pkgs...), nil
 	})
 }
 
@@ -61,13 +57,108 @@ func FindPackageByDir(dir string) FindPackageFunc {
 	}
 }
 
+// Graph is the package import graph
+type Graph map[*Package][]*Package
+
+// NewGraph constructs a new package graph
+func NewGraph(pkgs ...*packages.Package) Graph {
+	g := Graph{}
+
+	for _, pkg := range pkgs {
+		g[NewPackage(pkg)] = make([]*Package, 0)
+	}
+
+	g.relate()
+
+	return g
+}
+
+// Find finds a package in the graph
+func (g Graph) Find(fn FindPackageFunc) *Package {
+	for p := range g {
+		if fn(p) {
+			return p
+		}
+	}
+
+	return nil
+}
+
+// ImportPath returns the shortest import path betwween two packages, if no path exists the return
+// value will be nil
+func (g Graph) ImportPath(start, end *Package) ImportPath {
+	p := importPath(g, start, end, make(ImportPath, 0))
+
+	if len(p) == 0 {
+		return nil
+	}
+
+	return p
+}
+
+func importPath(g Graph, start, end *Package, p ImportPath) ImportPath {
+	if _, exist := g[start]; !exist {
+		return p
+	}
+
+	p = append(p, start)
+
+	if start == end {
+		return p
+	}
+
+	shortest := make([]*Package, 0)
+
+	for _, node := range g[start] {
+		if !p.HasNode(node) {
+			newPath := importPath(g, node, end, p)
+			if len(newPath) > 0 {
+				if len(shortest) == 0 || (len(newPath) < len(shortest)) {
+					shortest = newPath
+				}
+			}
+		}
+	}
+
+	return shortest
+}
+
+func (g Graph) relate() {
+	for parent, children := range g {
+		for _, imp := range parent.pkg.Imports {
+			if pkg := g.Find(FindPackageByID(imp.ID)); pkg != nil {
+				// Add to the graph
+				g[parent] = append(children, pkg)
+
+				// Add to the package
+				parent.Imports = append(parent.Imports, pkg)
+				pkg.Parents = append(pkg.Parents, parent)
+			}
+		}
+	}
+}
+
+// ImportPath holds the import path between two packages
+type ImportPath []*Package
+
+// HasNode checks if the path alreadt has the node
+func (p ImportPath) HasNode(pkg *Package) bool {
+	for _, v := range p {
+		if pkg == v {
+			return true
+		}
+	}
+
+	return false
+}
+
 // LoadPackages uses the default package loader to load the modules packages
-func LoadPackages(module string) (Packages, error) {
+func LoadPackages(module string) (Graph, error) {
 	return DefaultPackageLoader().Load(module)
 }
 
 // NewPackage creates a new *Package from a *packages.Package
-func NewPackage(module string, pkg *packages.Package) *Package {
+func NewPackage(pkg *packages.Package) *Package {
 	return &Package{
 		ID:      pkg.ID,
 		Dir:     Dir(pkg),
@@ -80,113 +171,24 @@ func NewPackage(module string, pkg *packages.Package) *Package {
 
 // Package represnets a module package
 type Package struct {
-	ID      string     // Module ID (the import path)
-	Dir     string     // Directory the package is located in
-	Parents []*Package // Packages that import this package
-	Imports []*Package // Packages imported by this package
+	ID      string     `json:"package"`   // Module ID (the import path)
+	Dir     string     `json:"directory"` // Directory the package is located in
+	Parents []*Package `json:"-"`         // Packages that import this package
+	Imports []*Package `json:"-"`         // Packages imported by this package
 
 	pkg *packages.Package // Raw package
 }
 
-// Packages holds the modules package structure which can be traversed
-type Packages map[string]*Package
-
-// Add adds Packages
-func (p Packages) Add(pkgs ...*Package) Packages {
-	for _, pkg := range pkgs {
-		p[pkg.ID] = pkg
-	}
-
-	p.relate()
-	p.prune()
-
-	return p
-}
-
-// AddNew creates a new Package and adds it
-func (p Packages) AddNew(module string, in ...*packages.Package) Packages {
-	pkgs := make([]*Package, len(in))
-
-	for i, pkg := range in {
-		pkgs[i] = NewPackage(module, pkg)
-	}
-
-	return p.Add(pkgs...)
-}
-
-// Find will traverse the packages and find the package, privde a FindPackageFunc used to decide if
-// a package has been founnd, if no package is found the return value will be nil
-func (p Packages) Find(cmp FindPackageFunc) *Package {
-	for _, pkg := range p {
-		if v := find(pkg, cmp); v != nil {
-			return v
-		}
-	}
-
-	return nil
-}
-
-func (p Packages) String() string {
-	var s string
-
-	var visit func(*Package, string)
-
-	visit = func(p *Package, indent string) {
-		s += fmt.Sprintf("\n%s %s", indent, p.ID)
-
-		for _, i := range p.Imports {
-			visit(i, indent+">")
-		}
-	}
-
-	for _, v := range p {
-		visit(v, ">")
-	}
-
-	return s
-}
-
-func find(p *Package, cmp FindPackageFunc) *Package {
-	if cmp(p) {
-		return p
-	}
-
-	for _, pkg := range p.Imports {
-		return find(pkg, cmp)
-	}
-
-	return nil
-}
-
-func (p Packages) prune() {
-	for k, v := range p {
-		if len(v.Parents) > 0 {
-			delete(p, k)
-		}
-	}
-}
-
-func (p Packages) relate() {
-	for _, parent := range p {
-		for _, imp := range parent.pkg.Imports {
-			if child, ok := p[imp.ID]; ok {
-				parent.Imports = append(parent.Imports, child)
-				child.Parents = append(child.Parents, parent)
-			}
-		}
-	}
-}
-
 // A PackageLoader uses go tooling to load packages in given module
 type PackageLoader interface {
-	Load(module string) (Packages, error)
+	Load(module string) (Graph, error)
 }
 
 // PackageLoaderFunc is an adaptor allowing methods to act as a PackageLoader
-type PackageLoaderFunc func(string) (Packages, error)
+type PackageLoaderFunc func(string) (Graph, error)
 
 // Load loads packages for a module
-func (fn PackageLoaderFunc) Load(m string) (Packages, error) {
+func (fn PackageLoaderFunc) Load(m string) (Graph, error) {
 	return fn(m)
 }
 
