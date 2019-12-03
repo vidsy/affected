@@ -81,30 +81,25 @@ func Packages(mod, a, b string, fn SubjectFunc) ([]*Package, error) {
 
 	for _, dir := range dirs {
 		if modified := graph.Find(module.FindPackageByDir(dir)); modified != nil {
-			err := module.Walk(modified, module.WalkParents, func(p *module.Package) error {
-				if fn(p) {
-					affected, ok := m[p.ID]
-					if !ok {
-						affected = &Package{
-							Package: p,
+			for pkg := range graph {
+				if fn(pkg) {
+					path := graph.ImportPath(pkg, modified)
+					if len(path) > 0 {
+						affected, ok := m[pkg.ID]
+						if !ok {
+							affected = &Package{
+								Package: pkg,
+							}
+
+							m[pkg.ID] = affected
 						}
 
-						m[p.ID] = affected
+						affected.Causes = append(affected.Causes, Cause{
+							Package:    modified,
+							ImportPath: path,
+						})
 					}
-
-					affected.Causes = append(affected.Causes, Cause{
-						Package:    modified,
-						ImportPath: graph.ImportPath(affected.Package, modified),
-					})
-
-					return module.ErrSkipPackage
 				}
-
-				return nil
-			})
-
-			if err != nil {
-				return nil, err
 			}
 		}
 	}
