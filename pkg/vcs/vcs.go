@@ -1,6 +1,6 @@
 package vcs
 
-import "github.com/vidsy/affected/vcs/git"
+import "github.com/vidsy/affected/pkg/vcs/git"
 
 var _ ModifiedDirectoriesDetector = new(git.VCS)
 

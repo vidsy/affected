@@ -1,101 +1,12 @@
 package affected
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"strings"
 
-	"github.com/vidsy/affected/module"
-	"github.com/vidsy/affected/vcs"
-	"github.com/vidsy/affected/vcs/git"
+	"github.com/vidsy/affected/pkg/module"
+	"github.com/vidsy/affected/pkg/vcs"
+	"github.com/vidsy/affected/pkg/vcs/git"
 )
-
-// Cause is why a package has been marked as affected
-type Cause struct {
-	Package    *module.Package   // The package that has modififcations
-	ImportPath module.ImportPath // The import graph to that package
-}
-
-// A Group holds a group of affected packages
-type Group struct {
-	Name     string
-	Packages []Package
-	Causes   []Cause
-}
-
-// MarshalJSON marshales groups of affected packages to json
-func (g Group) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"group":    g.Name,
-		"packages": g.Packages,
-	})
-}
-
-// Groups holds groups of grouped affected packages
-type Groups []Group
-
-func (g Groups) String() string {
-	w := new(bytes.Buffer)
-
-	for n, group := range g {
-		if n > 0 {
-			fmt.Fprint(w, "\n")
-		}
-
-		title := fmt.Sprintf("Group: %s", group.Name)
-
-		fmt.Fprintln(w, title)
-		fmt.Fprintln(w, strings.Repeat("-", len(title)))
-
-		for _, pkg := range group.Packages {
-			fmt.Fprintln(w, "- Package: ", pkg.ID)
-
-			for _, cause := range pkg.Causes {
-				fmt.Fprintln(w, " - Caused By:", cause.Package.ID)
-
-				for i, pkg := range cause.ImportPath {
-					fmt.Fprintln(w, fmt.Sprintf("  %s %s", strings.Repeat(">", i), pkg.ID))
-				}
-			}
-		}
-	}
-
-	return w.String()
-}
-
-// A GroupFunc determines a packages group name and if it should be grouped
-type GroupFunc func(*Package) (string, bool)
-
-// GroupPackages groups affected packages into groups determined by the GroupFunc
-func GroupPackages(fn GroupFunc, pkgs ...Package) Groups {
-	gm := make(map[string]*Group)
-
-	for _, pkg := range pkgs {
-		pkg := pkg
-
-		if name, ok := fn(&pkg); ok {
-			g, ok := gm[name]
-			if !ok {
-				g = &Group{
-					Name: name,
-				}
-
-				gm[name] = g
-			}
-
-			g.Packages = append(g.Packages, pkg)
-			g.Causes = append(g.Causes, pkg.Causes...)
-		}
-	}
-
-	groups := make(Groups, 0, len(gm))
-	for _, g := range gm {
-		groups = append(groups, *g)
-	}
-
-	return groups
-}
 
 // Package represents a modified package
 type Package struct {
