@@ -160,7 +160,7 @@ func WriteJSON(w io.Writer, v interface{}, indent bool) error {
 
 // WriteText writes the string output to the writer
 func WriteText(w io.Writer, v interface{}) error {
-	if _, err := fmt.Fprint(w); err != nil {
+	if _, err := fmt.Fprintln(w, v); err != nil {
 		return err
 	}
 
