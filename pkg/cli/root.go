@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ type Options struct {
 	Module  string
 	CommitA string
 	CommitB string
+	Discard bool
 
 	// Grouping options
 	GroupByPkgPrefix string
@@ -48,6 +50,7 @@ func RootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&opts.Format, "format", "f", "json", "e.g text/json/json-minified")
 	cmd.PersistentFlags().StringVarP(&opts.CommitA, "a", "a", "origin/master", "Commit A")
 	cmd.PersistentFlags().StringVarP(&opts.CommitB, "b", "b", "HEAD", "Commit B")
+	cmd.PersistentFlags().BoolVarP(&opts.Discard, "discard", "d", false, "Discard output")
 
 	cmd.AddCommand(GroupCmd(opts))
 
@@ -130,6 +133,10 @@ func GroupFunc(opts *Options) affected.GroupFunc {
 // Writer returns a writer based on the options, defaults to stdout
 func Writer(opts *Options) io.Writer {
 	var w io.Writer = os.Stdout
+
+	if opts.Discard {
+		w = ioutil.Discard
+	}
 
 	// Add suoport for writing directly to file with -v output for also writing to stdout
 	// at the same time via a T writer
