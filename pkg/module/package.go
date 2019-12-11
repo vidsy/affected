@@ -61,14 +61,16 @@ func FindPackageByDir(dir string) FindPackageFunc {
 type Graph map[*Package][]*Package
 
 // NewGraph constructs a new package graph
-func NewGraph(pkgs ...*packages.Package) Graph {
+func NewGraph(in ...*packages.Package) Graph {
 	g := Graph{}
 
-	for _, pkg := range pkgs {
-		g[NewPackage(pkg)] = make([]*Package, 0)
+	pkgs := make([]*Package, len(in))
+
+	for i, pkg := range in {
+		pkgs[i] = NewPackage(pkg)
 	}
 
-	g.relate()
+	g.relate(pkgs...)
 
 	return g
 }
@@ -123,18 +125,19 @@ func importPath(g Graph, start, end *Package, p ImportPath) ImportPath {
 	return shortest
 }
 
-func (g Graph) relate() {
-	for parent, children := range g {
-		for _, imp := range parent.pkg.Imports {
-			if pkg := g.Find(FindPackageByID(imp.ID)); pkg != nil {
-				// Add to the graph
-				g[parent] = append(children, pkg)
+func (g Graph) relate(pkgs ...*Package) {
+	for _, parent := range pkgs {
+		children := make([]*Package, 0)
 
-				// Add to the package
-				parent.Imports = append(parent.Imports, pkg)
-				pkg.Parents = append(pkg.Parents, parent)
+		for _, imp := range parent.pkg.Imports {
+			for _, p := range pkgs {
+				if p.ID == imp.ID {
+					children = append(children, p)
+				}
 			}
 		}
+
+		g[parent] = children
 	}
 }
 
