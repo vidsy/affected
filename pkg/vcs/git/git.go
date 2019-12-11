@@ -66,7 +66,7 @@ func (vcs *VCS) ModifiedFiles(a, b string) ([]string, error) {
 
 func (vcs *VCS) diff(a, b string, flags ...string) ([]string, error) {
 	args := append(
-		[]string{"diff", fmt.Sprintf("%s...%s", a, b)},
+		[]string{"diff", fmt.Sprintf("%s..%s", a, b)},
 		flags...)
 
 	cmd := exec.Command("git", args...)
