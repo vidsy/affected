@@ -7,7 +7,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/vidsy/affected/pkg/glob"
+	"github.com/vidsy/affected/pkg/vcs"
 )
+
+var _ vcs.ModifiedDirectoriesDetector = new(VCS)
 
 // VCS provides functionality for the git version control system
 type VCS struct {
@@ -15,8 +20,10 @@ type VCS struct {
 }
 
 // ModifiedDirectories returns a slice of directories that have modification between two commits
-func (vcs *VCS) ModifiedDirectories(a, b string) ([]string, error) {
-	files, err := vcs.ModifiedFiles(a, b)
+// If no globs are provided then all mofified files within the directory will result in the
+// directory as being modified
+func (v *VCS) ModifiedDirectories(a, b string, opts ...vcs.ModifiedDirectoriesOption) ([]string, error) {
+	files, err := v.ModifiedFiles(a, b, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -43,17 +50,24 @@ func (vcs *VCS) ModifiedDirectories(a, b string) ([]string, error) {
 	return dirs, nil
 }
 
-// ModifiedFiles returns a set of modified files between two git commits
-func (vcs *VCS) ModifiedFiles(a, b string) ([]string, error) {
-	lines, err := vcs.diff(a, b, "--name-only")
+// ModifiedFiles returns a set of modified files between two git commits, if no globs are provided
+// all files will be marked as modified
+func (v *VCS) ModifiedFiles(a, b string, opts ...vcs.ModifiedDirectoriesOption) ([]string, error) {
+	lines, err := v.diff(a, b, "--name-only")
 	if err != nil {
 		return nil, err
+	}
+
+	o := &vcs.ModifiedDirectoriesOptions{}
+
+	for _, opt := range opts {
+		opt(o)
 	}
 
 	files := make([]string, len(lines))
 
 	for i, line := range lines {
-		abs, err := filepath.Abs(filepath.Join(vcs.RepositoryDir, line))
+		abs, err := filepath.Abs(filepath.Join(v.RepositoryDir, line))
 		if err != nil {
 			return nil, err
 		}
@@ -61,10 +75,18 @@ func (vcs *VCS) ModifiedFiles(a, b string) ([]string, error) {
 		files[i] = abs
 	}
 
+	if len(o.IncludeGlobs) > 0 {
+		files = glob.Include(files, o.IncludeGlobs...)
+	}
+
+	if len(o.ExcludeGlobs) > 0 {
+		files = glob.Exclude(files, o.ExcludeGlobs...)
+	}
+
 	return files, nil
 }
 
-func (vcs *VCS) diff(a, b string, flags ...string) ([]string, error) {
+func (v *VCS) diff(a, b string, flags ...string) ([]string, error) {
 	args := append(
 		[]string{"diff", fmt.Sprintf("%s..%s", a, b)},
 		flags...)

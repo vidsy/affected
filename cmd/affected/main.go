@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/vidsy/affected/pkg/cli"
+	"github.com/vidsy/affected/pkg/cmd"
 )
 
 func main() {
-	cli.CheckErrExit(cli.RootCmd().Execute())
+	cmd.CheckErrExit(cmd.RootCmd().Execute())
 }
