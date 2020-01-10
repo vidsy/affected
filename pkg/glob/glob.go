@@ -21,6 +21,9 @@ const (
 // IncludeDefault returns the default set of default include globs
 func IncludeDefault() []string {
 	return []string{
+		"**/*.go",
+		"**/go.mod",
+		"**/go.sum",
 		"/**/*.go",
 		"/**/go.mod",
 		"/**/go.sum",
@@ -30,6 +33,7 @@ func IncludeDefault() []string {
 // ExcludeDefault returns the default set of default exlude globs
 func ExcludeDefault() []string {
 	return []string{
+		"**/*_test.go",
 		"/**/*_test.go",
 	}
 }
@@ -65,7 +69,10 @@ func Exclude(in []string, globs ...string) []string {
 	for _, x := range Include(in, globs...) {
 		for i, v := range in {
 			if v == x {
-				in = append(in[:i], in[i+2:]...)
+				copy(in[i:], in[i+1:])
+				in[len(in)-1] = ""
+				in = in[:len(in)-1]
+
 				break
 			}
 		}
