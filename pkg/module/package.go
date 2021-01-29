@@ -2,24 +2,56 @@ package module
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"golang.org/x/tools/go/packages"
 )
 
-// DefaultPackageLoader is the default package loader
-func DefaultPackageLoader() PackageLoader {
-	return PackageLoaderFunc(func(module string) (Graph, error) {
-		cfg := &packages.Config{
-			Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedTypes,
-		}
+// ErrSkipPackage will stop the package walker waking the package
+var ErrSkipPackage = errors.New("skip walking this package")
 
-		pkgs, err := packages.Load(cfg, module+"/...")
+type (
+	// A GraphConstructor uses go tooling to load packages in given module
+	GraphConstructor interface {
+		Construct(modules ...string) (Graph, error)
+	}
+
+	// A PackageLoader loads packages for one or more modules.
+	PackageLoader interface {
+		Load(modules ...string) ([]*packages.Package, error)
+	}
+)
+
+// DefaultGraphConstructor is the default graph constructor
+func DefaultGraphConstructor() GraphConstructor {
+	return GraphConstructorFunc(func(modules ...string) (Graph, error) {
+		pkgs, err := DefaultPackageLoader().Load(modules...)
 		if err != nil {
 			return nil, err
 		}
 
 		return NewGraph(pkgs...), nil
+	})
+}
+
+// DefaultPackageLoader is the default package loader
+func DefaultPackageLoader() PackageLoader {
+	return PackageLoaderFunc(func(modules ...string) ([]*packages.Package, error) {
+		cfg := &packages.Config{
+			Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedTypes,
+		}
+
+		for i := range modules {
+			modules[i] = fmt.Sprintf("%s/...", modules[i])
+		}
+
+		pkgs, err := packages.Load(cfg, modules...)
+		if err != nil {
+			return nil, err
+		}
+
+		return pkgs, nil
 	})
 }
 
@@ -37,9 +69,6 @@ func Dir(pkg *packages.Package) string {
 	return dir
 }
 
-// ErrSkipPackage will stop the package walker waking the package
-var ErrSkipPackage = errors.New("skip walking this package")
-
 // A FindPackageFunc is used to compare a package during a Find
 type FindPackageFunc func(*Package) bool
 
@@ -55,6 +84,14 @@ func FindPackageByDir(dir string) FindPackageFunc {
 	return func(p *Package) bool {
 		return p.Dir == dir
 	}
+}
+
+// GraphConstructorFunc is an adaptor allowing methods to act as a GraphConstructor
+type GraphConstructorFunc func(...string) (Graph, error)
+
+// Construct loads packages for a module
+func (fn GraphConstructorFunc) Construct(modules ...string) (Graph, error) {
+	return fn(modules...)
 }
 
 // Graph is the package import graph
@@ -126,10 +163,10 @@ func importPath(g Graph, start, end *Package, p ImportPath) ImportPath {
 }
 
 func (g Graph) relate(pkgs ...*Package) {
-	for _, parent := range pkgs {
+	for _, pkg := range pkgs {
 		children := make([]*Package, 0)
 
-		for _, imp := range parent.pkg.Imports {
+		for _, imp := range pkg.pkg.Imports {
 			for _, p := range pkgs {
 				if p.ID == imp.ID {
 					children = append(children, p)
@@ -137,7 +174,7 @@ func (g Graph) relate(pkgs ...*Package) {
 			}
 		}
 
-		g[parent] = children
+		g[pkg] = children
 	}
 }
 
@@ -155,9 +192,9 @@ func (p ImportPath) HasNode(pkg *Package) bool {
 	return false
 }
 
-// LoadPackages uses the default package loader to load the modules packages
-func LoadPackages(module string) (Graph, error) {
-	return DefaultPackageLoader().Load(module)
+// ConstructGraph uses the default graph constructor to load the modules packages
+func ConstructGraph(modules ...string) (Graph, error) {
+	return DefaultGraphConstructor().Construct(modules...)
 }
 
 // NewPackage creates a new *Package from a *packages.Package
@@ -172,6 +209,14 @@ func NewPackage(pkg *packages.Package) *Package {
 	}
 }
 
+// PackageLoaderFunc is an adaptor allowing methods to act as a PackageLoader.
+type PackageLoaderFunc func(modules ...string) ([]*packages.Package, error)
+
+// Load loads packages for a module.
+func (fn PackageLoaderFunc) Load(modules ...string) ([]*packages.Package, error) {
+	return fn(modules...)
+}
+
 // Package represnets a module package
 type Package struct {
 	ID      string     `json:"package"`   // Module ID (the import path)
@@ -180,19 +225,6 @@ type Package struct {
 	Imports []*Package `json:"-"`         // Packages imported by this package
 
 	pkg *packages.Package // Raw package
-}
-
-// A PackageLoader uses go tooling to load packages in given module
-type PackageLoader interface {
-	Load(module string) (Graph, error)
-}
-
-// PackageLoaderFunc is an adaptor allowing methods to act as a PackageLoader
-type PackageLoaderFunc func(string) (Graph, error)
-
-// Load loads packages for a module
-func (fn PackageLoaderFunc) Load(m string) (Graph, error) {
-	return fn(m)
 }
 
 // WalkDirection is a direction in which we can traverse the packages
