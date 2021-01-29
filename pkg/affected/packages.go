@@ -117,7 +117,7 @@ func Packages(name, a, b string, opts ...PackagesOption) ([]Package, error) {
 	// NOTE: There maybe a better way of resolving an absolute go file path to a package import path
 	// But at time of writting I could not find one. Ideally we would resolve package path while
 	// looping over the files which would be more efficient but since I can't figure out how to
-	// resolve a go file path to a package improt path this is the best I could come up with.
+	// resolve a go file path to a package import path this is the best I could come up with.
 
 	dirs := make(map[string]*packages.Package)
 
