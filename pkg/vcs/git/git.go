@@ -2,6 +2,7 @@ package git
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -110,6 +111,24 @@ func (v *VCS) diff(a, b string, flags ...string) ([]string, error) {
 	}
 
 	return lines, cmd.Wait()
+}
+
+// ReadFileAtRef reads a file from the repository at a given ref, e.g commit or branch.
+func (v *VCS) ReadFileAtRef(ref, name string) ([]byte, error) {
+	var buff bytes.Buffer
+
+	cmd := exec.Command("git", []string{"show", fmt.Sprintf("%s:%s", ref, name)}...)
+	cmd.Stdout = &buff
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return nil, err
+	}
+
+	return buff.Bytes(), nil
 }
 
 // New constructs a new git VCS

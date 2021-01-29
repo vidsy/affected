@@ -27,3 +27,13 @@ func ModifiedDirectoriesExcludeGlobs(globs ...string) ModifiedDirectoriesOption 
 type ModifiedDirectoriesDetector interface {
 	ModifiedDirectories(a, b string, opts ...ModifiedDirectoriesOption) ([]string, error)
 }
+
+// A ModifiedFilesDetector can detect modified files.
+type ModifiedFilesDetector interface {
+	ModifiedFiles(a, b string, opts ...ModifiedDirectoriesOption) ([]string, error)
+}
+
+// FileAtRefReader reads a file at a given ref, e.g a branch or commit.
+type FileAtRefReader interface {
+	ReadFileAtRef(ref, name string) ([]byte, error)
+}
