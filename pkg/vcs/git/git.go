@@ -87,11 +87,6 @@ func (v *VCS) ModifiedFiles(a, b string, opts ...vcs.ModifiedDirectoriesOption) 
 	return files, nil
 }
 
-func (v *VCS) Modfile(a, b string) error {
-
-	return nil
-}
-
 func (v *VCS) diff(a, b string, flags ...string) ([]string, error) {
 	args := append(
 		[]string{"diff", fmt.Sprintf("%s..%s", a, b)},
