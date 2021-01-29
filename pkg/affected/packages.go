@@ -154,7 +154,7 @@ func Packages(name, a, b string, opts ...PackagesOption) ([]Package, error) {
 			pkgs = append(pkgs, updated...)
 
 			// Add packages to modified packages
-			modified = append(modified, pkgs...)
+			modified = append(modified, updated...)
 		case strings.HasSuffix(file, ".go"):
 			dir := filepath.Dir(file)
 
