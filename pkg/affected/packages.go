@@ -155,7 +155,7 @@ func Packages(name, a, b string, opts ...PackagesOption) ([]Package, error) {
 
 			// Add packages to modified packages
 			modified = append(modified, updated...)
-		case strings.HasSuffix(file, ".go"):
+		default:
 			dir := filepath.Dir(file)
 
 			if _, seen := seen[dir]; seen {
