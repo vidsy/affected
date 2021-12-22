@@ -241,10 +241,18 @@ func diffModfile(r vcs.FileAtRefReader, l module.PackageLoader, refA, refB, path
 	require := make(map[string]string)
 
 	for _, module := range modfileA.Require {
+		if module.Indirect {
+			continue
+		}
+
 		require[module.Mod.Path] = module.Mod.Version
 	}
 
 	for _, module := range modfileB.Require {
+		if module.Indirect {
+			continue
+		}
+
 		v, ok := require[module.Mod.Path]
 		if !ok { // new module
 			continue
